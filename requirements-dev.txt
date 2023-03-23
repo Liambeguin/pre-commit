@@ -4,3 +4,4 @@ distlib
 pytest
 pytest-env
 re-assert
+junit2html
