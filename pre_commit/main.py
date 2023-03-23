@@ -162,6 +162,10 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
             'the rewrite'
         ),
     )
+    parser.add_argument(
+        '--junitxml',
+        help='Specifies which file to use for Junit XML output',
+    )
 
 
 def _adjust_args_and_chdir(args: argparse.Namespace) -> None:

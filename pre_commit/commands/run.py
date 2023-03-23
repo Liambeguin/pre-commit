@@ -14,6 +14,7 @@ from typing import Collection
 from typing import MutableMapping
 from typing import Sequence
 
+import junitparser
 from identify.identify import tags_from_path
 
 from pre_commit import color
@@ -30,6 +31,7 @@ from pre_commit.util import cmd_output_b
 
 
 logger = logging.getLogger('pre_commit')
+ts = junitparser.TestSuite(name='pre-commit')
 
 
 def _len_cjk(msg: str) -> int:
@@ -150,7 +152,11 @@ def _run_single_hook(
 ) -> tuple[bool, bytes]:
     filenames = classifier.filenames_for_hook(hook)
 
+    ansi_escape = re.compile(r'\x1b[^m]*m')
+    tc = junitparser.TestCase(name=hook.name)
+
     if hook.id in skips or hook.alias in skips:
+        tc.result = [junitparser.Skipped(f'{hook.name} found in skips')]
         output.write(
             _full_msg(
                 start=hook.name,
@@ -166,6 +172,7 @@ def _run_single_hook(
         files_modified = False
         out = b''
     elif not filenames and not hook.always_run:
+        tc.result = [junitparser.Skipped('nothing to do')]
         output.write(
             _full_msg(
                 start=hook.name,
@@ -205,13 +212,21 @@ def _run_single_hook(
         # if the hook makes changes, fail the commit
         files_modified = diff_before != diff_after
 
+        out_esc = ansi_escape.sub('', out.decode())
+        out_esc = out_esc.replace('\x0f', '')
+
         if retcode or files_modified:
+            tc.system_err = out_esc
+            tc.result = [junitparser.Failure(out_esc)]
             print_color = color.RED
             status = 'Failed'
         else:
+            tc.system_out = out_esc
             print_color = color.GREEN
             status = 'Passed'
 
+        tc.time = duration
+        ts.add_testcase(tc)
         output.write_line(color.format_color(status, print_color, use_color))
 
     if verbose or hook.verbose or retcode or files_modified:
@@ -290,6 +305,7 @@ def _run_hooks(
     classifier = Classifier.from_config(
         _all_filenames(args), config['files'], config['exclude'],
     )
+
     retval = 0
     prior_diff = _get_diff()
     for hook in hooks:
@@ -318,6 +334,11 @@ def _run_hooks(
             f'--color={git_color_opt}',
         ))
 
+    if args.junitxml:
+        print(f'\nwriting junit xml to: {args.junitxml}')
+        xml = junitparser.JUnitXml()
+        xml.add_testsuite(ts)
+        xml.write(args.junitxml)
     return retval
 
 
